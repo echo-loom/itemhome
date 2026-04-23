@@ -1752,15 +1752,15 @@
         <div class="sub">扫码溯源 · 临期提醒 · 收纳规划 · 智能建档</div>
         <div class="home-stats">
           <div class="home-stat">
-            <span class="number">0</span>
+            <span class="number" id="home-stat-total">0</span>
             <span class="label">件物品</span>
           </div>
           <div class="home-stat">
-            <span class="number">0</span>
+            <span class="number" id="home-stat-expired">0</span>
             <span class="label">已过期</span>
           </div>
           <div class="home-stat">
-            <span class="number">0</span>
+            <span class="number" id="home-stat-soon">0</span>
             <span class="label">临期</span>
           </div>
         </div>
@@ -3293,25 +3293,38 @@
     }
 
     function renderHome() {
+      const items = getItems();
+      const now = new Date();
+      const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const total = items.length;
+      const expired = items.filter(i => i.expiryDate && new Date(i.expiryDate) < now).length;
+      const soon = items.filter(i => i.expiryDate && new Date(i.expiryDate) >= now && new Date(i.expiryDate) <= in7).length;
+
+      const totalEl = document.getElementById('home-stat-total');
+      const expiredEl = document.getElementById('home-stat-expired');
+      const soonEl = document.getElementById('home-stat-soon');
+      if (totalEl) totalEl.textContent = String(total);
+      if (expiredEl) expiredEl.textContent = String(expired);
+      if (soonEl) soonEl.textContent = String(soon);
+
       const expiring = getExpiringItems();
       const listEl = document.getElementById('expiring-list');
       const emptyEl = document.getElementById('expiring-empty');
       listEl.innerHTML = '';
       if (expiring.length === 0) {
         emptyEl.style.display = 'block';
-        return;
+      } else {
+        emptyEl.style.display = 'none';
+        expiring.forEach(item => {
+          const li = document.createElement('li');
+          const daysClass = item.days < 0 ? 'days overdue' : 'days';
+          const daysText = item.days < 0 ? `已过期 ${-item.days} 天` : `剩余 ${item.days} 天`;
+          li.innerHTML = `<span>${escapeHtml(item.name)}</span><span class="${daysClass}">${daysText}</span>`;
+          li.onclick = () => location.hash = '#detail?id=' + item.id;
+          listEl.appendChild(li);
+        });
       }
-      emptyEl.style.display = 'none';
-      expiring.forEach(item => {
-        const li = document.createElement('li');
-        const daysClass = item.days < 0 ? 'days overdue' : 'days';
-        const daysText = item.days < 0 ? `已过期 ${-item.days} 天` : `剩余 ${item.days} 天`;
-        li.innerHTML = `<span>${escapeHtml(item.name)}</span><span class="${daysClass}">${daysText}</span>`;
-        li.onclick = () => location.hash = '#detail?id=' + item.id;
-        listEl.appendChild(li);
-      });
 
-      const items = getItems();
       const roomCount = {};
       items.forEach(item => {
         const room = item.location || '未分类';
