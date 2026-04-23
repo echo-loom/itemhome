@@ -1203,11 +1203,13 @@
       cursor: pointer;
       transition: all 0.2s;
       display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      gap: 0.4rem;
+      font-size: 1rem;
       font-weight: 600;
-      color: var(--text-muted);
+      color: var(--text);
     }
     .grid-cell:hover {
       border-color: var(--accent);
@@ -1215,12 +1217,22 @@
     }
     .grid-cell .area-name {
       font-weight: 600;
-      font-size: 0.9rem;
-      margin-bottom: 0.35rem;
+      font-size: 0.95rem;
+      color: var(--text);
     }
     .grid-cell .area-items {
       font-size: 0.8rem;
       color: var(--text-muted);
+    }
+    .grid-cell .area-preview {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.25;
+      display: -webkit-box;
+      line-clamp: 3;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
     .to-be-arranged {
       margin-top: 1.5rem;
@@ -4087,36 +4099,48 @@
       }
       
       if (storageHeader) storageHeader.textContent = room + ' 收纳图';
-      if (storageDesc) storageDesc.textContent = '（按物品类别箱子中摆放）';
+      if (storageDesc) storageDesc.textContent = '（按“存放区域”自动分组，点击区域可查看该区域物品）';
       
       const layouts = getLayouts();
       let layout = layouts[room];
       if (!layout) layout = { room, areas: [] };
 
       const items = getItems();
-      
-      // 生成15个网格单元格，带编号
-      let gridHTML = '';
-      for (let i = 1; i <= 15; i++) {
-        const area = layout.areas.find(a => a.name === i.toString());
-        let content = i.toString();
-        
-        if (area) {
-          const count = (area.items || []).length;
-          content = `
-            <div class="area-name">${i}</div>
+
+      const itemById = new Map(items.map(it => [it.id, it]));
+      const areas = (layout.areas || [])
+        .map(a => {
+          const ids = Array.from(new Set(a.items || []));
+          const resolved = ids.map(id => itemById.get(id)).filter(Boolean);
+          return { name: a.name || '默认区', ids, resolved };
+        })
+        .filter(a => a.resolved.length > 0)
+        .sort((a, b) => b.resolved.length - a.resolved.length);
+
+      if (!areas.length) {
+        grid.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">该房间暂无区域数据。你可以在「物品建档」里填写“存放区域”（如：冰箱/书架/抽屉）后再来看。</p>';
+        return;
+      }
+
+      grid.innerHTML = areas.map(a => {
+        const count = a.resolved.length;
+        const preview = a.resolved.slice(0, 6).map(it => escapeHtml(it.name || '未命名')).join(' · ');
+        const more = count > 6 ? ` 等 ${count} 件` : '';
+        return `
+          <div class="grid-cell" data-area="${escapeHtml(a.name)}">
+            <div class="area-name">${escapeHtml(a.name)}</div>
             <div class="area-items">${count} 件</div>
-          `;
-        }
-        
-        gridHTML += `
-          <div class="grid-cell" data-area="${i}">
-            ${content}
+            <div class="area-preview">${preview}${more}</div>
           </div>
         `;
-      }
-      
-      grid.innerHTML = gridHTML;
+      }).join('');
+
+      grid.querySelectorAll('.grid-cell').forEach(cell => {
+        cell.onclick = () => {
+          const area = cell.dataset.area || '';
+          location.hash = '#list?room=' + encodeURIComponent(room) + '&area=' + encodeURIComponent(area);
+        };
+      });
     }
 
     // ========== 物品列表/搜索 ==========
@@ -4126,8 +4150,27 @@
       select.innerHTML = '<option value="">全部房间</option>' +
         rooms.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
 
+      // 默认不启用区域过滤（仅当从收纳图跳转带 ?area= 时才启用）
+      const view = document.getElementById('view-list');
+      if (view) view.dataset.areaFilter = '';
+
       document.getElementById('btn-search').onclick = applyListFilter;
       document.getElementById('search-name').onkeydown = e => { if (e.key === 'Enter') applyListFilter(); };
+      // 手动改筛选条件时，视为“普通搜索”，自动清除区域过滤
+      document.getElementById('filter-room').onchange = () => {
+        const v = document.getElementById('view-list');
+        if (v) v.dataset.areaFilter = '';
+        applyListFilter();
+      };
+      document.getElementById('filter-expiry').onchange = () => {
+        const v = document.getElementById('view-list');
+        if (v) v.dataset.areaFilter = '';
+        applyListFilter();
+      };
+      document.getElementById('search-name').oninput = () => {
+        const v = document.getElementById('view-list');
+        if (v) v.dataset.areaFilter = '';
+      };
 
       applyListFilter();
     }
@@ -4136,17 +4179,23 @@
       const name = (document.getElementById('search-name') && document.getElementById('search-name').value || '').trim().toLowerCase();
       const room = (document.getElementById('filter-room') && document.getElementById('filter-room').value) || '';
       const expiry = (document.getElementById('filter-expiry') && document.getElementById('filter-expiry').value) || '';
+      const areaFilter = (document.getElementById('view-list') && document.getElementById('view-list').dataset.areaFilter || '').trim();
       const now = new Date();
       const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
       let list = getItems();
       if (name) list = list.filter(i => (i.name || '').toLowerCase().includes(name));
       if (room) list = list.filter(i => i.location === room);
+      if (areaFilter) list = list.filter(i => String(i.roomArea || '').trim() === areaFilter);
       if (expiry === 'expired') list = list.filter(i => i.expiryDate && new Date(i.expiryDate) < now);
       if (expiry === 'soon') list = list.filter(i => i.expiryDate && new Date(i.expiryDate) >= now && new Date(i.expiryDate) <= in7);
       if (expiry === 'ok') list = list.filter(i => !i.expiryDate || new Date(i.expiryDate) > in7);
 
       const ul = document.getElementById('item-list');
+      if (!list.length) {
+        ul.innerHTML = '<li style="padding:0.9rem; color: var(--text-muted); background: var(--card); border: 1px solid var(--border); border-radius: 8px;">暂无匹配物品</li>';
+        return;
+      }
       ul.innerHTML = list.map(item => {
         const exp = item.expiryDate ? new Date(item.expiryDate) : null;
         const isExpired = exp && exp < now;
@@ -4368,12 +4417,23 @@
       __oldRenderList();
       const hash = window.location.hash.slice(1) || '';
       const [, param] = hash.split('?');
-      const q = new URLSearchParams(param || '').get('q');
+      const params = new URLSearchParams(param || '');
+      const q = params.get('q');
+      const room = params.get('room');
+      const area = params.get('area');
+
+      const view = document.getElementById('view-list');
+      if (view) view.dataset.areaFilter = area ? area : '';
+
       if (q) {
         const el = document.getElementById('search-name');
         if (el) el.value = q;
-        applyListFilter();
       }
+      if (room) {
+        const sel = document.getElementById('filter-room');
+        if (sel) sel.value = room;
+      }
+      applyListFilter();
     };
 
     // ========== 家庭共享空间 ==========
