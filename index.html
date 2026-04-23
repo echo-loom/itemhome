@@ -3831,9 +3831,25 @@
       stopScan();
       document.getElementById('manual-id').value = '';
       document.getElementById('btn-lookup').onclick = () => {
-        const id = document.getElementById('manual-id').value.trim();
-        if (!id) { showToast('请输入物品ID', 'error'); return; }
-        location.hash = '#detail?id=' + encodeURIComponent(id);
+        const q = document.getElementById('manual-id').value.trim();
+        if (!q) { showToast('请输入物品名称或ID', 'error'); return; }
+
+        const items = getItems();
+        const byId = items.find(i => i.id === q);
+        if (byId) {
+          location.hash = '#detail?id=' + encodeURIComponent(byId.id);
+          return;
+        }
+
+        const qNorm = q.toLowerCase();
+        const matches = items.filter(i => String(i.name || '').toLowerCase().includes(qNorm));
+        if (matches.length === 1) {
+          location.hash = '#detail?id=' + encodeURIComponent(matches[0].id);
+          return;
+        }
+
+        // 多个匹配/没有匹配：跳转列表页并带入关键词
+        location.hash = '#list?q=' + encodeURIComponent(q);
       };
 
       const btnCam = document.getElementById('btn-toggle-cam');
