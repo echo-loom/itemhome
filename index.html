@@ -3682,6 +3682,7 @@
       const form = document.getElementById('form-register');
       const qrResult = document.getElementById('qr-result');
       const submitBtn = document.getElementById('btn-register-submit');
+      let __lastRegisterPhotoFile = null;
       qrResult.style.display = 'none';
       form.reset();
       document.getElementById('photo-preview').style.display = 'none';
@@ -3712,6 +3713,7 @@
       document.getElementById('photo-input').onchange = function () {
         const file = this.files[0];
         if (!file) return;
+        __lastRegisterPhotoFile = file;
         const reader = new FileReader();
         reader.onload = e => {
           const img = document.getElementById('photo-preview');
@@ -3720,6 +3722,32 @@
         };
         reader.readAsDataURL(file);
       };
+
+      const aiToggle = document.querySelector('#view-register .ai-toggle');
+      if (aiToggle) {
+        aiToggle.onclick = () => {
+          const img = document.getElementById('photo-preview');
+          const hasImage = !!(img && img.src && img.src.startsWith('data:'));
+          if (!hasImage && !__lastRegisterPhotoFile) { showToast('请先上传照片再识别', 'error'); return; }
+
+          const base = (__lastRegisterPhotoFile && __lastRegisterPhotoFile.name ? __lastRegisterPhotoFile.name : '')
+            .replace(/\.[^.]+$/, '')
+            .trim();
+          const guess = base || (form.name && form.name.value ? String(form.name.value).trim() : '') || '新物品';
+
+          if (form.name) form.name.value = guess;
+
+          const rec = recommendPlacement({ name: guess, note: (form.note && form.note.value) || '' });
+          ensureRoomExists(rec.room);
+          const updatedRooms = getRooms();
+          select.innerHTML = '<option value="">请选择或下方自定义</option>' +
+            updatedRooms.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
+          if (form.location) form.location.value = rec.room;
+          if (form.roomArea) form.roomArea.value = rec.area;
+
+          showToast('已识别并填入，可手动修改');
+        };
+      }
 
       form.onsubmit = function (e) {
         e.preventDefault();
