@@ -4240,15 +4240,23 @@
       const text = ((item.name || '') + ' ' + (item.note || '')).toLowerCase();
       const rules = [
         { keys: ['锅', '炉', '微波', '电饭', '榨汁', '烤', '冰箱', '厨'], room: '厨房', area: '厨电区', reason: '检测到厨电/厨房关键词' },
-        { keys: ['米', '面', '油', '盐', '糖', '茶', '咖啡', '零食', '调料'], room: '厨房', area: '食品区', reason: '检测到食品/调料关键词' },
+        { keys: ['米', '面', '油', '盐', '糖', '茶', '咖啡', '零食', '调料', '饼干', '薯片', '辣条', '巧克力', '泡面', '火腿', '罐头', '饮料', '牛奶', '酸奶', '果汁'], room: '厨房', area: '食品区', reason: '检测到食品/零食/饮品关键词' },
         { keys: ['衣', '裤', '鞋', '袜', '被', '枕', '床', '毯'], room: '卧室', area: '衣物区', reason: '检测到衣物/寝具关键词' },
-        { keys: ['洗发', '沐浴', '牙', '毛巾', '纸', '洁面', '护肤'], room: '卫生间', area: '日化区', reason: '检测到日化/洗护关键词' },
+        { keys: ['洗发', '沐浴', '牙', '毛巾', '纸', '洁面', '护肤', '洗衣', '消毒', '洗洁精', '洗手液', '卫生', '抽纸', '湿巾'], room: '卫生间', area: '日化区', reason: '检测到日化/洗护关键词' },
+        { keys: ['药', '胶囊', '片', '创可贴', '体温', '口罩', '酒精', '碘伏', '维生素'], room: '客厅', area: '医药箱', reason: '检测到医药/防护关键词' },
         { keys: ['书', '本', '文具', '笔', '电脑', '键盘', '鼠标'], room: '客厅', area: '学习区', reason: '检测到学习/数码关键词' },
       ];
       for (const r of rules) {
         if (r.keys.some(k => text.includes(k))) return { room: r.room, area: r.area, reason: r.reason };
       }
-      return { room: item.location || '客厅', area: item.roomArea || '默认区', reason: '未命中关键词，沿用当前或默认建议' };
+      // 兜底：避免“推荐=当前存放”导致看起来没变化
+      // 若用户尚未填写位置，则给出默认推荐；若已填写位置，则仍给出一个通用收纳建议作为“可参考的替代方案”
+      const hasLocation = !!(item.location && String(item.location).trim());
+      const hasArea = !!(item.roomArea && String(item.roomArea).trim());
+      if (!hasLocation && !hasArea) {
+        return { room: '客厅', area: '收纳区', reason: '未命中关键词，给出默认收纳建议' };
+      }
+      return { room: '客厅', area: '收纳区', reason: '未命中关键词，给出通用收纳建议（不复用当前存放）' };
     }
 
     async function copyText(text) {
