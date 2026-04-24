@@ -2197,6 +2197,23 @@
           <button class="btn btn-primary" id="btn-move-generate"><i class="fas fa-wand-magic-sparkles"></i> 生成打包清单</button>
           <button class="btn btn-secondary" id="btn-move-export"><i class="fas fa-copy"></i> 导出清单</button>
         </div>
+        <div style="margin-top:0.75rem; padding:0.65rem 0.75rem; border:1px dashed var(--border); border-radius:10px; background: rgba(143,184,156,0.06);">
+          <div style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; justify-content:space-between;">
+            <div style="display:flex; gap:0.8rem; flex-wrap:wrap; align-items:center;">
+              <span style="font-weight:650;">进度</span>
+              <span style="color:var(--text-muted);">总数 <strong id="move-total">0</strong></span>
+              <span style="color:var(--text-muted);">已打包 <strong id="move-packed">0</strong></span>
+              <span style="color:var(--text-muted);">未打包 <strong id="move-unpacked">0</strong></span>
+            </div>
+            <label style="display:flex; align-items:center; gap:0.45rem; user-select:none;">
+              <input type="checkbox" id="move-only-unpacked">
+              <span style="color:var(--text-muted);">只看未打包</span>
+            </label>
+          </div>
+          <div style="margin-top:0.45rem; color:var(--text-muted); font-size:0.85rem;">
+            提示：勾选表示已装箱；开启“只看未打包”可快速查漏。导出时可仅导出未打包内容。
+          </div>
+        </div>
       </div>
       <div class="card">
         <div class="card-title">打包清单</div>
@@ -4843,10 +4860,13 @@
     function initMove() {
       document.getElementById('btn-move-generate').onclick = renderMoveList;
       document.getElementById('btn-move-export').onclick = async () => {
-        const text = buildMoveExportText();
+        const onlyUnpacked = !!(document.getElementById('move-only-unpacked') && document.getElementById('move-only-unpacked').checked);
+        const text = buildMoveExportText({ onlyUnpacked });
         await copyText(text);
         showToast('清单已复制');
       };
+      const cbOnly = document.getElementById('move-only-unpacked');
+      if (cbOnly) cbOnly.onchange = renderMoveList;
       renderMoveList();
     }
 
@@ -4855,12 +4875,31 @@
       const items = getItems();
       const state = readJSON(STORAGE_MOVE, { packed: {} });
       if (!items.length) { container.textContent = '暂无物品，请先建档'; return; }
+      const onlyUnpacked = !!(document.getElementById('move-only-unpacked') && document.getElementById('move-only-unpacked').checked);
+
+      // 统计
+      const total = items.length;
+      let packedCount = 0;
+      for (const it of items) if (state.packed[it.id]) packedCount++;
+      const unpackedCount = total - packedCount;
+      const elTotal = document.getElementById('move-total');
+      const elPacked = document.getElementById('move-packed');
+      const elUnpacked = document.getElementById('move-unpacked');
+      if (elTotal) elTotal.textContent = String(total);
+      if (elPacked) elPacked.textContent = String(packedCount);
+      if (elUnpacked) elUnpacked.textContent = String(unpackedCount);
+
       const byRoom = {};
       items.forEach(it => {
+        if (onlyUnpacked && state.packed[it.id]) return;
         const r = it.location || '未分类';
         (byRoom[r] ||= []).push(it);
       });
       container.innerHTML = '';
+      if (onlyUnpacked && !Object.keys(byRoom).length) {
+        container.innerHTML = '<div style="padding:0.9rem; color: var(--text-muted); background: var(--card); border: 1px solid var(--border); border-radius: 8px;">太棒了：当前没有未打包物品</div>';
+        return;
+      }
       Object.keys(byRoom).sort().forEach(room => {
         const wrap = document.createElement('div');
         wrap.style.marginBottom = '0.75rem';
@@ -4884,19 +4923,23 @@
           const next = readJSON(STORAGE_MOVE, { packed: {} });
           next.packed[id] = cb.checked;
           writeJSON(STORAGE_MOVE, next);
+          renderMoveList(); // 更新统计与筛选视图
         };
       });
     }
 
-    function buildMoveExportText() {
+    function buildMoveExportText(options = {}) {
+      const onlyUnpacked = !!options.onlyUnpacked;
       const items = getItems();
       const state = readJSON(STORAGE_MOVE, { packed: {} });
       const byRoom = {};
       items.forEach(it => {
+        if (onlyUnpacked && state.packed[it.id]) return;
         const r = it.location || '未分类';
         (byRoom[r] ||= []).push(it);
       });
-      let out = `拾物集·搬家清单\\n导出时间：${new Date().toLocaleString()}\\n\\n`;
+      const title = onlyUnpacked ? '拾物集·搬家清单（仅未打包）' : '拾物集·搬家清单';
+      let out = `${title}\\n导出时间：${new Date().toLocaleString()}\\n\\n`;
       Object.keys(byRoom).sort().forEach(room => {
         out += `【${room}】\\n`;
         byRoom[room].forEach(it => {
