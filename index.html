@@ -1927,6 +1927,21 @@
               <span>开启摄像头</span>
             </button>
             <p class="scan-note">* 请确保浏览器已获得摄像头访问权限</p>
+            <div style="margin-top:0.75rem; display:flex; gap:0.75rem; flex-wrap:wrap;">
+              <label class="btn btn-secondary" for="scan-image-input" style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                <i class="fas fa-image"></i>
+                <span>从图片识别二维码</span>
+              </label>
+              <input id="scan-image-input" type="file" accept="image/*" style="display:none;">
+              <button type="button" class="btn btn-secondary" id="btn-scan-image-clear" style="display:none;">
+                <i class="fas fa-xmark"></i>
+                <span>清除图片</span>
+              </button>
+            </div>
+            <div id="scan-image-preview-wrap" style="display:none; margin-top:0.65rem;">
+              <div style="color:var(--text-muted); font-size:0.86rem; margin-bottom:0.4rem;">已选择图片（会自动识别二维码）</div>
+              <img id="scan-image-preview" alt="待识别图片" style="width:100%; max-height:220px; object-fit:contain; border-radius:12px; border:1px solid var(--border); background:#fff;">
+            </div>
           </div>
         </div>
         
@@ -3884,6 +3899,79 @@
       const btnCam = document.getElementById('btn-toggle-cam');
       const video = document.getElementById('scan-video');
       const placeholder = document.getElementById('scan-placeholder');
+      const imgInput = document.getElementById('scan-image-input');
+      const imgPreviewWrap = document.getElementById('scan-image-preview-wrap');
+      const imgPreview = document.getElementById('scan-image-preview');
+      const btnClearImg = document.getElementById('btn-scan-image-clear');
+
+      async function decodeQrFromImageUrl(dataUrl) {
+        if (typeof jsQR === 'undefined') {
+          showToast('缺少二维码识别库（jsQR）', 'error');
+          return;
+        }
+        const canvas = document.getElementById('scan-canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        img.onload = () => {
+          // 绘制到 canvas 后解码
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height);
+          if (!code || !code.data) {
+            showToast('未识别到二维码，请换一张更清晰的图片', 'error');
+            return;
+          }
+          try {
+            const data = JSON.parse(code.data);
+            if (data && data.id) {
+              showToast('识别成功');
+              location.hash = '#detail?id=' + encodeURIComponent(data.id);
+              return;
+            }
+          } catch (_) {}
+          showToast('识别成功');
+          location.hash = '#detail?id=' + encodeURIComponent(code.data);
+        };
+        img.onerror = () => showToast('图片读取失败', 'error');
+        img.src = dataUrl;
+      }
+
+      if (imgInput) {
+        imgInput.onchange = () => {
+          const f = imgInput.files && imgInput.files[0];
+          if (!f) return;
+          // 选图时如果摄像头在开着，先关掉，避免用户困惑
+          if (scanStream) {
+            stopScan();
+            video.style.display = 'none';
+            placeholder.style.display = 'flex';
+            btnCam.innerHTML = '<i class="fas fa-video"></i> <span>开启摄像头</span>';
+          }
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const url = e.target && e.target.result ? String(e.target.result) : '';
+            if (!url) return;
+            if (imgPreviewWrap) imgPreviewWrap.style.display = 'block';
+            if (btnClearImg) btnClearImg.style.display = 'inline-flex';
+            if (imgPreview) imgPreview.src = url;
+            decodeQrFromImageUrl(url);
+          };
+          reader.readAsDataURL(f);
+        };
+      }
+
+      if (btnClearImg) {
+        btnClearImg.onclick = () => {
+          if (imgInput) imgInput.value = '';
+          if (imgPreviewWrap) imgPreviewWrap.style.display = 'none';
+          if (btnClearImg) btnClearImg.style.display = 'none';
+          if (imgPreview) imgPreview.src = '';
+          showToast('已清除');
+        };
+      }
+
       btnCam.onclick = function () {
         if (scanStream) {
           stopScan();
