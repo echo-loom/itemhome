@@ -2294,30 +2294,7 @@
           </div>
         </div>
         
-        <div class="settings-blocks">
-
-          <div class="setting-item">
-            <span>铃声/静音</span>
-            <label class="toggle-switch">
-              <input type="checkbox" id="sound-toggle" onchange="toggleSound()">
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <div class="setting-item">
-            <span>通知提醒</span>
-            <label class="toggle-switch">
-              <input type="checkbox" id="notification-toggle" onchange="toggleNotification()">
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <div class="setting-item">
-            <span>自动备份</span>
-            <label class="toggle-switch">
-              <input type="checkbox" id="backup-toggle" onchange="toggleBackup()">
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
+        <!-- 已移除：铃声/通知/自动备份 设置区块（需求：界面精简） -->
         
         <div class="other-features">
           <div class="feature-item" data-action="about">
@@ -3480,27 +3457,6 @@
         };
       });
       
-      // 设置功能
-      function toggleSound() {
-        const isSoundOn = document.getElementById('sound-toggle').checked;
-        localStorage.setItem('sound', isSoundOn ? 'on' : 'off');
-        showToast(isSoundOn ? '铃声已开启' : '铃声已关闭');
-      }
-      
-      function toggleNotification() {
-        const isNotificationOn = document.getElementById('notification-toggle').checked;
-        localStorage.setItem('notification', isNotificationOn ? 'on' : 'off');
-        showToast(isNotificationOn ? '通知提醒已开启' : '通知提醒已关闭');
-      }
-      
-      function toggleBackup() {
-        const isBackupOn = document.getElementById('backup-toggle').checked;
-        localStorage.setItem('backup', isBackupOn ? 'on' : 'off');
-        showToast(isBackupOn ? '自动备份已开启' : '自动备份已关闭');
-      }
-      
-
-      
       // 关于我们模态框
       function showAboutModal() {
         const modal = document.createElement('div');
@@ -3560,19 +3516,7 @@
         document.body.appendChild(modal);
       }
       
-      // 加载设置
-      function loadSettings() {
-        const sound = localStorage.getItem('sound') || 'on';
-        const notification = localStorage.getItem('notification') || 'on';
-        const backup = localStorage.getItem('backup') || 'off';
-        
-        document.getElementById('sound-toggle').checked = sound === 'on';
-        document.getElementById('notification-toggle').checked = notification === 'on';
-        document.getElementById('backup-toggle').checked = backup === 'on';
-      }
-      
-      // 页面加载时加载设置
-      loadSettings();
+      // 已移除：铃声/通知/自动备份 开关与加载逻辑（需求：界面精简）
     }
     
     // 打开个人资料编辑弹窗
