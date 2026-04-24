@@ -4236,7 +4236,151 @@
         items.map(i => `<option value="${escapeHtml(i.id)}">${escapeHtml(i.name)}（${escapeHtml(i.location || '未分类')}）</option>`).join('');
     }
 
+    // ========== 本地“AI”推荐（相似度 + 自学习） ==========
+    function __isCJK(ch) { return /[\u4e00-\u9fff]/.test(ch); }
+    function __tokenize(text) {
+      const t = String(text || '').toLowerCase();
+      const tokens = [];
+      const latin = t.match(/[a-z0-9]+/g);
+      if (latin) tokens.push(...latin);
+
+      // CJK 使用 2-gram，避免必须分词
+      let buf = '';
+      for (const ch of t) {
+        if (__isCJK(ch)) buf += ch;
+        else {
+          if (buf.length >= 2) {
+            for (let i = 0; i < buf.length - 1; i++) tokens.push(buf.slice(i, i + 2));
+          } else if (buf.length === 1) tokens.push(buf);
+          buf = '';
+        }
+      }
+      if (buf.length >= 2) {
+        for (let i = 0; i < buf.length - 1; i++) tokens.push(buf.slice(i, i + 2));
+      } else if (buf.length === 1) tokens.push(buf);
+
+      return tokens.filter(Boolean);
+    }
+
+    function __tf(tokens) {
+      const m = new Map();
+      for (const w of tokens) m.set(w, (m.get(w) || 0) + 1);
+      return m;
+    }
+
+    function __dot(a, b) {
+      // sparse dot product
+      let sum = 0;
+      const [small, big] = a.size < b.size ? [a, b] : [b, a];
+      for (const [k, v] of small) {
+        const bv = big.get(k);
+        if (bv) sum += v * bv;
+      }
+      return sum;
+    }
+
+    function __norm(a) {
+      let s = 0;
+      for (const v of a.values()) s += v * v;
+      return Math.sqrt(s) || 1;
+    }
+
+    function __normalize(vec) {
+      const n = __norm(vec);
+      const out = new Map();
+      for (const [k, v] of vec) out.set(k, v / n);
+      return out;
+    }
+
+    function __buildPlacementModel(items) {
+      const docs = [];
+      const df = new Map();
+
+      for (const it of items) {
+        const room = String(it.location || '').trim();
+        const area = String(it.roomArea || '').trim();
+        if (!room && !area) continue;
+        const labelRoom = room || '未分类';
+        const labelArea = area || '默认区';
+        const label = `${labelRoom}||${labelArea}`;
+        const text = `${it.name || ''} ${it.note || ''}`;
+        const tokens = __tokenize(text);
+        if (!tokens.length) continue;
+        const tf = __tf(tokens);
+        docs.push({ id: it.id, name: it.name || '', label, tf });
+
+        const seen = new Set(tf.keys());
+        for (const w of seen) df.set(w, (df.get(w) || 0) + 1);
+      }
+
+      const N = docs.length;
+      if (N < 4) return null; // 样本太少时别装“AI”，直接走规则兜底更稳
+
+      const idf = new Map();
+      for (const [w, c] of df) idf.set(w, Math.log((N + 1) / (c + 1)) + 1);
+
+      const centroids = new Map(); // label -> Map(term, weightSum)
+      const labelCounts = new Map();
+      const docVecs = new Map(); // id -> normalized tfidf vec
+
+      for (const d of docs) {
+        const v = new Map();
+        for (const [w, c] of d.tf) v.set(w, c * (idf.get(w) || 1));
+        const nv = __normalize(v);
+        docVecs.set(d.id, nv);
+
+        if (!centroids.has(d.label)) centroids.set(d.label, new Map());
+        const cen = centroids.get(d.label);
+        for (const [w, val] of nv) cen.set(w, (cen.get(w) || 0) + val);
+        labelCounts.set(d.label, (labelCounts.get(d.label) || 0) + 1);
+      }
+
+      // normalize centroid
+      for (const [label, vec] of centroids) centroids.set(label, __normalize(vec));
+
+      return { idf, centroids, labelCounts, docs, docVecs };
+    }
+
+    function __predictPlacementAI(item) {
+      const items = getItems();
+      const model = __buildPlacementModel(items);
+      if (!model) return null;
+
+      const text = `${item.name || ''} ${item.note || ''}`;
+      const tokens = __tokenize(text);
+      if (!tokens.length) return null;
+
+      const tf = __tf(tokens);
+      const v = new Map();
+      for (const [w, c] of tf) v.set(w, c * (model.idf.get(w) || 0.6));
+      const q = __normalize(v);
+
+      let best = null;
+      for (const [label, cen] of model.centroids) {
+        const score = __dot(q, cen);
+        if (!best || score > best.score) best = { label, score };
+      }
+      if (!best || best.score < 0.12) return null; // 太低说明不相似，别强推
+
+      // 找一个最相似的历史样本作为“解释”
+      let example = null;
+      for (const d of model.docs) {
+        if (d.label !== best.label) continue;
+        const s = __dot(q, model.docVecs.get(d.id) || new Map());
+        if (!example || s > example.score) example = { name: d.name || '历史物品', score: s };
+      }
+
+      const [room, area] = best.label.split('||');
+      const scoreText = (best.score * 100).toFixed(0) + '%';
+      const exText = example ? `，参考相似物品「${example.name}」` : '';
+      return { room, area, reason: `AI 相似度推荐（置信度 ${scoreText}${exText}）` };
+    }
+
     function recommendPlacement(item) {
+      // 优先：本地“AI”相似度推荐（自学习：你存得越多越准）
+      const ai = __predictPlacementAI(item);
+      if (ai) return ai;
+
       const text = ((item.name || '') + ' ' + (item.note || '')).toLowerCase();
       const rules = [
         { keys: ['锅', '炉', '微波', '电饭', '榨汁', '烤', '冰箱', '厨'], room: '厨房', area: '厨电区', reason: '检测到厨电/厨房关键词' },
@@ -4254,9 +4398,9 @@
       const hasLocation = !!(item.location && String(item.location).trim());
       const hasArea = !!(item.roomArea && String(item.roomArea).trim());
       if (!hasLocation && !hasArea) {
-        return { room: '客厅', area: '收纳区', reason: '未命中关键词，给出默认收纳建议' };
+        return { room: '客厅', area: '收纳区', reason: 'AI/规则均无法判断，给出默认收纳建议' };
       }
-      return { room: '客厅', area: '收纳区', reason: '未命中关键词，给出通用收纳建议（不复用当前存放）' };
+      return { room: '客厅', area: '收纳区', reason: 'AI/规则均无法判断，给出通用收纳建议（不复用当前存放）' };
     }
 
     async function copyText(text) {
