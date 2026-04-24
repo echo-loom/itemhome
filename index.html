@@ -4125,7 +4125,7 @@
       const items = getItems();
 
       const itemById = new Map(items.map(it => [it.id, it]));
-      const areas = (layout.areas || [])
+      let areas = (layout.areas || [])
         .map(a => {
           const ids = Array.from(new Set(a.items || []));
           const resolved = ids.map(id => itemById.get(id)).filter(Boolean);
@@ -4134,9 +4134,33 @@
         .filter(a => a.resolved.length > 0)
         .sort((a, b) => b.resolved.length - a.resolved.length);
 
+      // 若 layouts 未同步（例如数据导入/后端覆盖等），则从 items 自动推导区域分组，保证“收纳图”一定能显示
       if (!areas.length) {
-        grid.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">该房间暂无区域数据。你可以在「物品建档」里填写“存放区域”（如：冰箱/书架/抽屉）后再来看。</p>';
-        return;
+        const inRoom = items.filter(it => (it.location || '未分类') === room);
+        const byArea = {};
+        inRoom.forEach(it => {
+          const an = String(it.roomArea || '').trim() || '默认区';
+          (byArea[an] ||= []).push(it);
+        });
+        const keys = Object.keys(byArea);
+        if (!keys.length) {
+          grid.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">该房间暂无物品。你可以先去「物品建档」添加物品。</p>';
+          return;
+        }
+
+        areas = keys
+          .map(name => ({
+            name,
+            ids: byArea[name].map(it => it.id),
+            resolved: byArea[name]
+          }))
+          .sort((a, b) => b.resolved.length - a.resolved.length);
+
+        // 顺便回写 layouts，后续点击区域/跨页面保持一致
+        const nextLayouts = getLayouts();
+        if (!nextLayouts[room]) nextLayouts[room] = { room, areas: [] };
+        nextLayouts[room].areas = areas.map(a => ({ name: a.name, items: a.ids }));
+        setLayouts(nextLayouts);
       }
 
       grid.innerHTML = areas.map(a => {
